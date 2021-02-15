@@ -1,9 +1,11 @@
 package server
 
 import (
-	"fmt"
 	"log"
+	"net/http"
 	"time"
+
+	"github.com/usvc/go-server/middleware"
 )
 
 func NewHTTPOptions() HTTPOptions {
@@ -12,18 +14,28 @@ func NewHTTPOptions() HTTPOptions {
 			Address: "0.0.0.0",
 			Port:    8000,
 		},
-		LivenessProbe: HTTPPath{
-			Path: "/healthz",
+		CORS: middleware.CORSConfiguration{
+			AllowHeaders:      []string{},
+			AllowMethods:      []string{http.MethodGet, http.MethodOptions, http.MethodPost},
+			AllowOrigins:      []string{"127.0.0.1"},
+			AllowCredentials:  false,
+			EnablePassthrough: false,
+			MaxAge:            30 * time.Minute,
 		},
+		Disable: HTTPDisables{
+			CORS:              false,
+			RequestIdentifier: false,
+			RequestLogger:     false,
+		},
+		LivenessProbe: NewHTTPProbe("/healthz", "", nil),
 		Loggers: HTTPLoggers{
-			Error: log.Print,
+			ServerEvent: log.Print,
+			Request:     log.Print,
 		},
 		Metrics: HTTPPath{
 			Path: "/metrics",
 		},
-		ReadinessProbe: HTTPPath{
-			Path: "/readyz",
-		},
+		ReadinessProbe: NewHTTPProbe("/readyz", "", nil),
 		Timeouts: HTTPTimeouts{
 			Idle:       30 * time.Second,
 			Read:       3 * time.Second,
@@ -31,54 +43,31 @@ func NewHTTPOptions() HTTPOptions {
 			Write:      10 * time.Second,
 		},
 		Version: HTTPVersion{
+			Path:  "/version",
 			Value: "development",
 		},
 	}
 }
 
 type HTTPOptions struct {
-	Addr             HTTPAddr     `json:"addr" yaml:"addr"`
-	LivenessProbe    HTTPPath     `json:"livenessProbe" yaml:"livenessProbe"`
-	Metrics          HTTPPath     `json:"metrics" yaml:"metrics"`
-	ReadinessProbe   HTTPPath     `json:"readinessProbe" yaml:"readinessProbe"`
-	Timeouts         HTTPTimeouts `json:"timeouts" yaml:"timeouts"`
-	Version          HTTPVersion  `json:"version" yaml:"version"`
+	Addr             HTTPAddr                     `json:"addr" yaml:"addr"`
+	CORS             middleware.CORSConfiguration `json:"cors" yaml:"cors"`
+	Disable          HTTPDisables                 `json:"enable" yaml:"enable"`
+	LivenessProbe    HTTPProbe                    `json:"livenessProbe" yaml:"livenessProbe"`
+	Metrics          HTTPPath                     `json:"metrics" yaml:"metrics"`
+	ReadinessProbe   HTTPProbe                    `json:"readinessProbe" yaml:"readinessProbe"`
+	Timeouts         HTTPTimeouts                 `json:"timeouts" yaml:"timeouts"`
+	Version          HTTPVersion                  `json:"version" yaml:"version"`
+	Middlewares      middleware.Middlewares
 	ShutdownHandlers HTTPShutdownHandlers
 	Loggers          HTTPLoggers
 }
 
-type HTTPAddr struct {
-	Address string `json:"address" yaml:"address"`
-	Port    uint   `json:"port" yaml:"port"`
+type HTTPDisables struct {
+	CORS              bool `json:"cors" yaml:"cors"`
+	RequestIdentifier bool `json:"requestIdentifier" yaml:"requestIdentifier"`
+	RequestLogger     bool `json:"requestLogger" yaml:"requestLogger"`
 }
-
-func (httpaddr HTTPAddr) String() string {
-	return fmt.Sprintf("%s:%v", httpaddr.Address, httpaddr.Port)
-}
-
-type HTTPLoggers struct {
-	Error   HTTPLogger
-	Request HTTPLogger
-}
-
-type HTTPPath struct {
-	Path     string `json:"path" yaml:"path"`
-	Password string `json:"password" yaml:"password"`
-}
-
-type HTTPLogger func(args ...interface{})
-
-type httplog struct {
-	Print HTTPLogger
-}
-
-func (hl httplog) Write(what []byte) (int, error) {
-	hl.Print(string(what))
-	return len(what), nil
-}
-
-type HTTPShutdownHandlers []HTTPShutdownHandler
-type HTTPShutdownHandler func(error) error
 
 type HTTPTimeouts struct {
 	Idle       time.Duration `json:"idle" yaml:"idle"`

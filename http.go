@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,30 +10,63 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/usvc/go-server/middleware"
 )
 
 func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 	addr := opts.Addr.String()
-	errorLogger := log.New(httplog{Print: opts.Loggers.Error}, "", 0)
+	errorLogger := log.New(loggerFromExternalLogger{Print: opts.Loggers.ServerEvent}, "", 0)
+
 	mux.HandleFunc(opts.LivenessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
 		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("\"ok\""))
 	})
+
 	mux.HandleFunc(opts.Metrics.Path, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotImplemented)
-		w.Write([]byte("\"todo\""))
+		promhttp.Handler().ServeHTTP(w, r)
 	})
+
 	mux.HandleFunc(opts.ReadinessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
 		w.Header().Add("Content-Type", "application/json")
+		if errs := opts.ReadinessProbe.Handlers.Do(); errs != nil {
+			errsAsJSON, marshalError := json.Marshal(errs)
+			if marshalError != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte(fmt.Sprintf("\"%s\"", marshalError.Error())))
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write(errsAsJSON)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("\"ok\""))
 	})
+
 	mux.HandleFunc(opts.Version.Path, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(fmt.Sprintf("%s", opts.Version.Value)))
 	})
+
 	handler := http.Handler(mux)
+
+	middlewares := middleware.Middlewares{}
+	if !opts.Disable.CORS {
+		middlewares = append(middlewares, middleware.NewCORS(opts.CORS))
+	}
+	if !opts.Disable.RequestLogger {
+		middlewares = append(middlewares, middleware.NewRequestLogger(middleware.RequestLoggerConfiguration{Log: opts.Loggers.Request}))
+	}
+	if !opts.Disable.RequestIdentifier {
+		middlewares = append(middlewares, middleware.NewRequestIdentifier(middleware.RequestIdentifierConfiguration{}))
+	}
+	for i := 0; i < len(middlewares); i++ {
+		apply := middlewares[i]
+		handler = apply(handler)
+	}
 	s := HTTP{
 		Options: &opts,
 		Server: &http.Server{
@@ -70,6 +104,7 @@ func (h HTTP) Start() {
 	})
 	h.Started.Add(1)
 	go func() {
+		h.Server.ErrorLog.Printf("starting server on '%s'...", h.Options.Addr.String())
 		events <- h.Server.ListenAndServe()
 	}()
 	go func() {
