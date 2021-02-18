@@ -25,10 +25,6 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 		w.Write([]byte("\"ok\""))
 	})
 
-	mux.HandleFunc(opts.Metrics.Path, func(w http.ResponseWriter, r *http.Request) {
-		promhttp.Handler().ServeHTTP(w, r)
-	})
-
 	mux.HandleFunc(opts.ReadinessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "application/json")
 		if errs := opts.ReadinessProbe.Handlers.Do(); errs != nil {
@@ -44,6 +40,10 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("\"ok\""))
+	})
+
+	mux.HandleFunc(opts.Metrics.Path, func(w http.ResponseWriter, r *http.Request) {
+		promhttp.Handler().ServeHTTP(w, r)
 	})
 
 	mux.HandleFunc(opts.Version.Path, func(w http.ResponseWriter, r *http.Request) {
@@ -89,19 +89,13 @@ type HTTP struct {
 }
 
 func (h HTTP) Start() {
-	h.Started = &sync.WaitGroup{}
 	events := make(chan error)
 	sigs := make(chan os.Signal, 1)
-	h.Options.ShutdownHandlers = append(h.Options.ShutdownHandlers, func(err error) (e error) {
-		defer func() {
-			if r := recover(); r != nil {
-				e = fmt.Errorf("%s", r)
-			}
-		}()
+	defer func() {
 		close(events)
 		close(sigs)
-		return nil
-	})
+	}()
+	h.Started = &sync.WaitGroup{}
 	h.Started.Add(1)
 	go func() {
 		h.Server.ErrorLog.Printf("starting server on '%s'...", h.Options.Addr.String())
@@ -118,7 +112,7 @@ func (h HTTP) Start() {
 	h.Started.Wait()
 }
 
-func (h HTTP) handleEvents(events <-chan error) {
+func (h *HTTP) handleEvents(events <-chan error) {
 	for {
 		event := <-events
 		eventMessage := event.Error()
@@ -127,26 +121,34 @@ func (h HTTP) handleEvents(events <-chan error) {
 			h.Server.ErrorLog.Printf("server was closed")
 			h.Started.Done()
 		case strings.Contains(eventMessage, "received signal: "):
-			errorCount := 1
-			h.Server.ErrorLog.Printf("\nserver %s", eventMessage)
-			if h.Options.ShutdownHandlers != nil {
-				h.Server.ErrorLog.Printf("running %v shutdown handlers...", len(h.Options.ShutdownHandlers))
-				for index, shutdownHandler := range h.Options.ShutdownHandlers {
-					if err := shutdownHandler(event); err != nil {
-						h.Server.ErrorLog.Printf("shutdown handler %v failed with: %s", index, err)
-						errorCount += 1
-						continue
-					}
-					h.Server.ErrorLog.Printf("shutdown handler %v succeeded", index)
-				}
-			}
-			os.Exit(errorCount)
+			h.Server.ErrorLog.Printf("server %s", eventMessage)
+			h.handleShutdown(event)
+			h.Started.Done()
 		case strings.Contains(eventMessage, "bind: address already in use"):
 			h.Server.ErrorLog.Printf("failed to start server: '%s' is already in use", h.Options.Addr.String())
-			os.Exit(1)
+			h.handleShutdown(event)
+			h.Started.Done()
 		default:
 			h.Server.ErrorLog.Printf("unknown event: %s", event)
-			os.Exit(255)
 		}
 	}
+}
+
+func (h *HTTP) handleShutdown(event error) []error {
+	errors := []error{}
+	if h.Options.ShutdownHandlers != nil {
+		h.Server.ErrorLog.Printf("running %v shutdown handlers...", len(h.Options.ShutdownHandlers))
+		for index, shutdownHandler := range h.Options.ShutdownHandlers {
+			if err := shutdownHandler(event); err != nil {
+				h.Server.ErrorLog.Printf("shutdown handler %v failed with: %s", index, err)
+				errors = append(errors, err)
+				continue
+			}
+			h.Server.ErrorLog.Printf("shutdown handler %v succeeded", index)
+		}
+	}
+	if len(errors) > 0 {
+		return errors
+	}
+	return nil
 }

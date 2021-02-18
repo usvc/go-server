@@ -60,12 +60,18 @@ func NewCORS(config Configuration) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestHeaders := strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",")
+			if len(requestHeaders) > 0 {
+				w.Header().Add("Vary", "Access-Control-Request-Headers")
+			}
 			requestMethod := r.Header.Get("Access-Control-Request-Method")
+			if len(requestMethod) > 0 {
+				w.Header().Add("Vary", "Access-Control-Request-Method")
+			}
 			requestOrigin := r.Header.Get("Origin")
-			w.Header().Add("Vary", "Origin")
-			w.Header().Add("Vary", "Access-Control-Request-Headers")
-			w.Header().Add("Vary", "Access-Control-Request-Method")
-			w.Header().Add("Vary", "Access-Control-Request-Origin")
+			if len(requestOrigin) > 0 {
+				w.Header().Add("Vary", "Origin")
+				w.Header().Add("Vary", "Access-Control-Request-Origin")
+			}
 
 			if _, allowed := allowedOrigins[requestOrigin]; allowed {
 				w.Header().Add("Access-Control-Allow-Origin", requestOrigin)

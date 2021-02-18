@@ -31,7 +31,7 @@ unit test:
   artifacts:
     paths: ["./bin/*"]
   variables:
-    BIN_NAME: config
+    BIN_NAME: server
   before_script: ["git fetch"]
   script: ["entrypoint"]
 .build_linux:
@@ -107,7 +107,7 @@ dockerize:
   artifacts:
     paths: ["./build/*"]
   variables:
-    DOCKER_IMAGE_URL: usvc/go-config
+    DOCKER_IMAGE_URL: usvc/go-server
   script: ["entrypoint"]
 
 dockerhub:
@@ -117,5 +117,5 @@ dockerhub:
   image: usvc/ci:docker-publish
   dependencies: ["dockerize"]
   variables:
-    DOCKER_IMAGE_URL: usvc/go-config
+    DOCKER_IMAGE_URL: usvc/go-server
   script: ["entrypoint"]
