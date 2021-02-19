@@ -19,41 +19,52 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 	addr := opts.Addr.String()
 	errorLogger := log.New(loggerFromExternalLogger{Print: opts.Loggers.ServerEvent}, "", 0)
 
-	mux.HandleFunc(opts.LivenessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("\"ok\""))
-	})
+	if !opts.Disable.LivenessProbe {
+		mux.HandleFunc(opts.LivenessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Add("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("\"ok\""))
+		})
+	}
 
-	mux.HandleFunc(opts.ReadinessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Content-Type", "application/json")
-		if errs := opts.ReadinessProbe.Handlers.Do(); errs != nil {
-			errsAsJSON, marshalError := json.Marshal(errs)
-			if marshalError != nil {
+	if !opts.Disable.ReadinessProbe {
+		mux.HandleFunc(opts.ReadinessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Add("Content-Type", "application/json")
+			if errs := opts.ReadinessProbe.Handlers.Do(); errs != nil {
+				errsAsJSON, marshalError := json.Marshal(errs)
+				if marshalError != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					w.Write([]byte(fmt.Sprintf("\"%s\"", marshalError.Error())))
+					return
+				}
 				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(fmt.Sprintf("\"%s\"", marshalError.Error())))
+				w.Write(errsAsJSON)
 				return
 			}
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write(errsAsJSON)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("\"ok\""))
-	})
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("\"ok\""))
+		})
+	}
 
-	mux.HandleFunc(opts.Metrics.Path, func(w http.ResponseWriter, r *http.Request) {
-		promhttp.Handler().ServeHTTP(w, r)
-	})
+	if !opts.Disable.Metrics {
+		mux.HandleFunc(opts.Metrics.Path, func(w http.ResponseWriter, r *http.Request) {
+			promhttp.Handler().ServeHTTP(w, r)
+		})
+	}
 
-	mux.HandleFunc(opts.Version.Path, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(fmt.Sprintf("%s", opts.Version.Value)))
-	})
+	if !opts.Disable.Version {
+		mux.HandleFunc(opts.Version.Path, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(fmt.Sprintf("%s", opts.Version.Value)))
+		})
+	}
 
 	handler := http.Handler(mux)
 
 	middlewares := middleware.Middlewares{}
+	if opts.Middlewares != nil && len(opts.Middlewares) > 0 {
+		middlewares = append(middlewares, opts.Middlewares...)
+	}
 	if !opts.Disable.CORS {
 		middlewares = append(middlewares, middleware.NewCORS(opts.CORS))
 	}
@@ -74,6 +85,7 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 			Handler:           handler,
 			ErrorLog:          errorLogger,
 			IdleTimeout:       opts.Timeouts.Idle,
+			MaxHeaderBytes:    opts.Limit.HeaderBytes,
 			ReadTimeout:       opts.Timeouts.Read,
 			ReadHeaderTimeout: opts.Timeouts.ReadHeader,
 			WriteTimeout:      opts.Timeouts.Write,
@@ -83,53 +95,64 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 }
 
 type HTTP struct {
-	Started *sync.WaitGroup
 	Options *HTTPOptions
 	Server  *http.Server
+
+	events  chan error
+	signals chan os.Signal
+	tasks   *sync.WaitGroup
 }
 
 func (h HTTP) Start() {
-	events := make(chan error)
-	sigs := make(chan os.Signal, 1)
+	h.tasks = &sync.WaitGroup{}
+	h.events = make(chan error)
+	h.signals = make(chan os.Signal, 1)
 	defer func() {
-		close(events)
-		close(sigs)
+		close(h.events)
+		close(h.signals)
 	}()
-	h.Started = &sync.WaitGroup{}
-	h.Started.Add(1)
-	go func() {
-		h.Server.ErrorLog.Printf("starting server on '%s'...", h.Options.Addr.String())
-		events <- h.Server.ListenAndServe()
-	}()
-	go func() {
-		signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT, syscall.SIGKILL)
-		go func() {
-			sig := <-sigs
-			events <- fmt.Errorf("received signal: %s", sig.String())
-		}()
-	}()
-	go h.handleEvents(events)
-	h.Started.Wait()
+	h.tasks.Add(1)
+	go h.startServer()
+	go h.startSignalsHandler()
+	go h.startEventsHandler()
+	h.tasks.Wait()
 }
 
-func (h *HTTP) handleEvents(events <-chan error) {
+func (h *HTTP) Stop() {
+	h.events <- h.Server.Close()
+}
+
+func (h *HTTP) startServer() {
+	h.Server.ErrorLog.Printf("starting server on '%s'...", h.Options.Addr.String())
+	h.events <- h.Server.ListenAndServe()
+}
+
+func (h *HTTP) startSignalsHandler() {
+	signal.Notify(h.signals, syscall.SIGTERM, syscall.SIGINT, syscall.SIGKILL)
+	sig := <-h.signals
+	h.events <- fmt.Errorf("received signal: %s", sig.String())
+}
+
+func (h *HTTP) startEventsHandler() {
 	for {
-		event := <-events
-		eventMessage := event.Error()
-		switch true {
-		case strings.Contains(eventMessage, "http: Server closed"):
-			h.Server.ErrorLog.Printf("server was closed")
-			h.Started.Done()
-		case strings.Contains(eventMessage, "received signal: "):
-			h.Server.ErrorLog.Printf("server %s", eventMessage)
-			h.handleShutdown(event)
-			h.Started.Done()
-		case strings.Contains(eventMessage, "bind: address already in use"):
-			h.Server.ErrorLog.Printf("failed to start server: '%s' is already in use", h.Options.Addr.String())
-			h.handleShutdown(event)
-			h.Started.Done()
-		default:
-			h.Server.ErrorLog.Printf("unknown event: %s", event)
+		event := <-h.events
+		if event != nil {
+			eventMessage := event.Error()
+			switch true {
+			case strings.Contains(eventMessage, "http: Server closed"):
+				h.Server.ErrorLog.Printf("server was closed")
+				h.tasks.Done()
+			case strings.Contains(eventMessage, "received signal: "):
+				h.Server.ErrorLog.Printf("server %s", eventMessage)
+				h.handleShutdown(event)
+				h.tasks.Done()
+			case strings.Contains(eventMessage, "bind: address already in use"):
+				h.Server.ErrorLog.Printf("failed to start server: '%s' is already in use", h.Options.Addr.String())
+				h.handleShutdown(event)
+				h.tasks.Done()
+			default:
+				h.Server.ErrorLog.Printf("unknown event: %s", event)
+			}
 		}
 	}
 }

@@ -33,12 +33,8 @@ type CORSConfiguration struct {
 	MaxAge time.Duration
 }
 
-func (cc CORSConfiguration) Get() interface{} {
-	return cc
-}
-
-func NewCORS(config Configuration) Middleware {
-	conf := config.Get().(CORSConfiguration)
+func NewCORS(config interface{}) Middleware {
+	conf := config.(CORSConfiguration)
 	allowedHeaders := map[string]bool{}
 	if conf.AllowHeaders != nil && len(conf.AllowHeaders) > 0 {
 		for _, allowedHeader := range conf.AllowHeaders {

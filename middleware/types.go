@@ -6,8 +6,4 @@ type Middlewares []Middleware
 
 type Middleware func(http.Handler) http.Handler
 
-type Getter func(Configuration) Middleware
-
-type Configuration interface {
-	Get() interface{}
-}
+type Getter func(interface{}) Middleware

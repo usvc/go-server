@@ -13,12 +13,8 @@ type RequestLoggerConfiguration struct {
 	Log types.Logger
 }
 
-func (rlc RequestLoggerConfiguration) Get() interface{} {
-	return rlc
-}
-
-func NewRequestLogger(config Configuration) func(http.Handler) http.Handler {
-	log := config.Get().(RequestLoggerConfiguration).Log
+func NewRequestLogger(config interface{}) Middleware {
+	log := config.(RequestLoggerConfiguration).Log
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestStart := time.Now()

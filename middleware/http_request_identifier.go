@@ -16,12 +16,8 @@ type RequestIdentifierConfiguration struct {
 	HeaderKey string
 }
 
-func (ric RequestIdentifierConfiguration) Get() interface{} {
-	return ric
-}
-
-func NewRequestIdentifier(config Configuration) func(http.Handler) http.Handler {
-	headerKey := config.Get().(RequestIdentifierConfiguration).HeaderKey
+func NewRequestIdentifier(config interface{}) Middleware {
+	headerKey := config.(RequestIdentifierConfiguration).HeaderKey
 	if len(headerKey) == 0 {
 		headerKey = DefaultRequestIdentifierHeaderKey
 	}
