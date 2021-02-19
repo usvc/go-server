@@ -17,22 +17,30 @@ func NewHTTPOptions() HTTPOptions {
 			Port:    8000,
 		},
 		CORS: middleware.CORSConfiguration{
+			AllowCredentials:  false,
 			AllowHeaders:      []string{},
 			AllowMethods:      []string{http.MethodGet, http.MethodOptions, http.MethodPost},
-			AllowOrigins:      []string{"127.0.0.1"},
-			AllowCredentials:  false,
+			AllowOrigins:      []string{"http://localhost:3000"},
 			EnablePassthrough: false,
+			ExposeHeaders:     []string{},
 			MaxAge:            30 * time.Minute,
 		},
 		Disable: HTTPDisable{
 			CORS:              false,
+			LivenessProbe:     false,
+			Metrics:           false,
+			ReadinessProbe:    false,
 			RequestIdentifier: false,
 			RequestLogger:     false,
+			Version:           false,
+		},
+		Limit: HTTPLimit{
+			HeaderBytes: 1024 * 100, // 100 kb
 		},
 		LivenessProbe: HTTPProbe{
-			Path:     "/healthz",
-			Password: "",
 			Handlers: nil,
+			Password: "",
+			Path:     "/healthz",
 		},
 		Loggers: HTTPLoggers{
 			ServerEvent: log.Print,
@@ -42,9 +50,9 @@ func NewHTTPOptions() HTTPOptions {
 			Path: "/metrics",
 		},
 		ReadinessProbe: HTTPProbe{
-			Path:     "/healthz",
-			Password: "",
 			Handlers: nil,
+			Password: "",
+			Path:     "/readyz",
 		},
 		Timeouts: HTTPTimeouts{
 			Idle:       30 * time.Second,

@@ -20,6 +20,7 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 	errorLogger := log.New(loggerFromExternalLogger{Print: opts.Loggers.ServerEvent}, "", 0)
 
 	if !opts.Disable.LivenessProbe {
+		errorLogger.Print("liveness probe is ENABLED")
 		mux.HandleFunc(opts.LivenessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -28,6 +29,7 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 	}
 
 	if !opts.Disable.ReadinessProbe {
+		errorLogger.Print("readiness probe is ENABLED")
 		mux.HandleFunc(opts.ReadinessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("Content-Type", "application/json")
 			if errs := opts.ReadinessProbe.Handlers.Do(); errs != nil {
@@ -47,12 +49,14 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 	}
 
 	if !opts.Disable.Metrics {
+		errorLogger.Print("metrics is ENABLED")
 		mux.HandleFunc(opts.Metrics.Path, func(w http.ResponseWriter, r *http.Request) {
 			promhttp.Handler().ServeHTTP(w, r)
 		})
 	}
 
 	if !opts.Disable.Version {
+		errorLogger.Print("version is ENABLED")
 		mux.HandleFunc(opts.Version.Path, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(fmt.Sprintf("%s", opts.Version.Value)))
@@ -66,12 +70,15 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 		middlewares = append(middlewares, opts.Middlewares...)
 	}
 	if !opts.Disable.CORS {
+		errorLogger.Print("cross-origin resource sharing is ENABLED")
 		middlewares = append(middlewares, middleware.NewCORS(opts.CORS))
 	}
 	if !opts.Disable.RequestLogger {
+		errorLogger.Print("request logging is ENABLED")
 		middlewares = append(middlewares, middleware.NewRequestLogger(middleware.RequestLoggerConfiguration{Log: opts.Loggers.Request}))
 	}
 	if !opts.Disable.RequestIdentifier {
+		errorLogger.Print("request identification is ENABLED")
 		middlewares = append(middlewares, middleware.NewRequestIdentifier(middleware.RequestIdentifierConfiguration{}))
 	}
 	for i := 0; i < len(middlewares); i++ {
@@ -104,22 +111,28 @@ type HTTP struct {
 }
 
 func (h HTTP) Start() {
-	h.tasks = &sync.WaitGroup{}
-	h.events = make(chan error)
-	h.signals = make(chan os.Signal, 1)
-	defer func() {
-		close(h.events)
-		close(h.signals)
-	}()
-	h.tasks.Add(1)
-	go h.startServer()
+	h.initialise()
+	defer h.denitialise()
 	go h.startSignalsHandler()
 	go h.startEventsHandler()
+	h.tasks.Add(1)
+	go h.startServer()
 	h.tasks.Wait()
 }
 
 func (h *HTTP) Stop() {
 	h.events <- h.Server.Close()
+}
+
+func (h *HTTP) denitialise() {
+	close(h.events)
+	close(h.signals)
+}
+
+func (h *HTTP) initialise() {
+	h.tasks = &sync.WaitGroup{}
+	h.events = make(chan error)
+	h.signals = make(chan os.Signal, 1)
 }
 
 func (h *HTTP) startServer() {

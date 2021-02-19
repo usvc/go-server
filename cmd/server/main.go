@@ -37,7 +37,7 @@ func main() {
 	s := server.NewHTTP(options, mux)
 	// go func(after <-chan time.Time) {
 	// 	<-after
-	// 	s.Server.Close()
+	// 	s.Stop()
 	// }(time.After(5 * time.Second))
 	s.Start()
 }
