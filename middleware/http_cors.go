@@ -7,6 +7,18 @@ import (
 	"time"
 )
 
+const (
+	CORSAccessControlAllowCredentials = "Access-Control-Allow-Credentials"
+	CORSAccessControlAllowHeaders     = "Access-Control-Allow-Headers"
+	CORSAccessControlAllowMethods     = "Access-Control-Allow-Methods"
+	CORSAccessControlAllowOrigin      = "Access-Control-Allow-Origin"
+	CORSAccessControlExposeHeaders    = "Access-Control-Expose-Headers"
+	CORSAccessControlMaxAge           = "Access-Control-Max-Age"
+	CORSOrigin                        = "Origin"
+	CORSAccessControlRequestHeaders   = "Access-Control-Request-Headers"
+	CORSAccessControlRequestMethod    = "Access-Control-Request-Method"
+)
+
 type CORSConfiguration struct {
 	// AllowCredentials sets the Access-Control-Allow-Credentials response header
 	// ref: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS#access-control-allow-credentials
@@ -55,26 +67,35 @@ func NewCORS(config interface{}) Middleware {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			requestHeaders := strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",")
+			requestHeaders := strings.Split(r.Header.Get(CORSAccessControlRequestHeaders), ",")
 			if len(requestHeaders) > 0 {
-				w.Header().Add("Vary", "Access-Control-Request-Headers")
+				w.Header().Add("Vary", CORSAccessControlRequestHeaders)
 			}
-			requestMethod := r.Header.Get("Access-Control-Request-Method")
-			if len(requestMethod) > 0 {
-				w.Header().Add("Vary", "Access-Control-Request-Method")
+			requestMethod := r.Method
+			if r.Header.Get(CORSAccessControlRequestMethod) != "" {
+				requestMethod = r.Header.Get(CORSAccessControlRequestMethod)
+				w.Header().Add("Vary", CORSAccessControlRequestMethod)
 			}
-			requestOrigin := r.Header.Get("Origin")
+			requestOrigin := r.Header.Get(CORSOrigin)
 			if len(requestOrigin) > 0 {
-				w.Header().Add("Vary", "Origin")
-				w.Header().Add("Vary", "Access-Control-Request-Origin")
+				w.Header().Add("Vary", CORSOrigin)
+			}
+			success := true
+
+			_, originAllowed := allowedOrigins[requestOrigin]
+			if originAllowed {
+				w.Header().Add(CORSAccessControlAllowOrigin, requestOrigin)
+			}
+			if len(requestOrigin) > 0 {
+				success = success && originAllowed
 			}
 
-			if _, allowed := allowedOrigins[requestOrigin]; allowed {
-				w.Header().Add("Access-Control-Allow-Origin", requestOrigin)
+			_, methodAllowed := allowedMethods[requestMethod]
+			if methodAllowed {
+				w.Header().Add(CORSAccessControlAllowMethods, requestMethod)
 			}
-
-			if _, allowed := allowedMethods[requestMethod]; allowed {
-				w.Header().Add("Access-Control-Allow-Methods", requestMethod)
+			if len(requestMethod) > 0 {
+				success = success && methodAllowed
 			}
 
 			for i := 0; i < len(requestHeaders); i++ {
@@ -90,26 +111,31 @@ func NewCORS(config interface{}) Middleware {
 				}
 			}
 			if allHeadersFound {
-				w.Header().Add("Access-Control-Allow-Headers", strings.Join(allowHeaders, ", "))
+				w.Header().Add(CORSAccessControlAllowHeaders, strings.Join(allowHeaders, ","))
 			}
+			success = success && allHeadersFound
 
 			if conf.AllowCredentials {
-				w.Header().Add("Access-Control-Allow-Credentials", "true")
+				w.Header().Add(CORSAccessControlAllowCredentials, "true")
 			}
 
-			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			if r.Method == http.MethodOptions && r.Header.Get(CORSAccessControlRequestMethod) != "" {
 				if conf.MaxAge > 0 {
-					w.Header().Add("Access-Control-Max-Age", strconv.FormatUint(uint64(conf.MaxAge.Seconds()), 10))
+					w.Header().Add(CORSAccessControlMaxAge, strconv.FormatUint(uint64(conf.MaxAge.Seconds()), 10))
 				}
 
 				if !conf.EnablePassthrough {
-					w.WriteHeader(http.StatusNoContent)
+					if success {
+						w.WriteHeader(http.StatusNoContent)
+					} else {
+						w.WriteHeader(http.StatusBadRequest)
+					}
 					return
 				}
 			}
 
 			if conf.ExposeHeaders != nil && len(conf.ExposeHeaders) > 0 {
-				w.Header().Add("Access-Control-Expose-Headers", strings.Join(conf.ExposeHeaders, ", "))
+				w.Header().Add(CORSAccessControlExposeHeaders, strings.Join(conf.ExposeHeaders, ","))
 			}
 
 			next.ServeHTTP(w, r)
