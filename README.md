@@ -1,6 +1,7 @@
-# Server
+# `go-server`
 
-[![release github](https://badge.fury.io/gh/usvc%2Fgo-server.svg)](https://github.com/usvc/go-server/releases)
+[![go version](https://img.shields.io/github/go-mod/go-version/usvc/go-server)](https://github.com/usvc/go-server)
+[![tag github](https://img.shields.io/github/v/tag/usvc/go-server)](https://github.com/usvc/go-server/tags)
 [![build status](https://travis-ci.org/usvc/go-server.svg?branch=master)](https://travis-ci.org/usvc/go-server)
 [![pipeline status](https://gitlab.com/usvc/modules/go/server/badges/master/pipeline.svg)](https://gitlab.com/usvc/modules/go/server/-/commits/master)
 [![Test Coverage](https://api.codeclimate.com/v1/badges/acfc321def02f47b57a2/test_coverage)](https://codeclimate.com/github/usvc/go-server/test_coverage)
