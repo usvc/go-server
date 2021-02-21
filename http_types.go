@@ -32,6 +32,7 @@ func NewHTTPOptions() HTTPOptions {
 			ReadinessProbe:    false,
 			RequestIdentifier: false,
 			RequestLogger:     false,
+			SignalHandling:    false,
 			Version:           false,
 		},
 		Limit: HTTPLimit{
@@ -98,6 +99,7 @@ type HTTPDisable struct {
 	ReadinessProbe    bool `json:"readinessProbe" yaml:"readinessProbe"`
 	RequestIdentifier bool `json:"requestIdentifier" yaml:"requestIdentifier"`
 	RequestLogger     bool `json:"requestLogger" yaml:"requestLogger"`
+	SignalHandling    bool `json:"signalHandling" yaml:"signalHandling"`
 	Version           bool `json:"version" yaml:"version"`
 }
 
@@ -125,25 +127,9 @@ type HTTPPath struct {
 }
 
 type HTTPProbe struct {
-	Handlers HTTPProbeHandlers
+	Handlers types.HTTPProbeHandlers
 	Password string `json:"password" yaml:"password"`
 	Path     string `json:"path" yaml:"path"`
-}
-
-type HTTPProbeHandler func() error
-type HTTPProbeHandlers []HTTPProbeHandler
-
-func (httpph HTTPProbeHandlers) Do() []error {
-	errors := []error{}
-	for _, handler := range httpph {
-		if err := handler(); err != nil {
-			errors = append(errors, err)
-		}
-	}
-	if len(errors) == 0 {
-		return nil
-	}
-	return errors
 }
 
 type HTTPShutdownHandlers []HTTPShutdownHandler

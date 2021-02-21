@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,67 +10,34 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/usvc/go-server/handlers"
 	"github.com/usvc/go-server/middleware"
 )
 
+// NewHTTP returns a new HTTP-based server based on the provided options :opts and the
+// custom routes handler :mux
 func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 	addr := opts.Addr.String()
 	errorLogger := log.New(loggerFromExternalLogger{Print: opts.Loggers.ServerEvent}, "", 0)
 
 	if !opts.Disable.LivenessProbe {
 		errorLogger.Print("liveness probe is ENABLED")
-		mux.HandleFunc(opts.LivenessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Add("Content-Type", "application/json")
-			if errs := opts.ReadinessProbe.Handlers.Do(); errs != nil {
-				errsAsJSON, marshalError := json.Marshal(errs)
-				if marshalError != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte(fmt.Sprintf("\"%s\"", marshalError.Error())))
-					return
-				}
-				w.WriteHeader(http.StatusInternalServerError)
-				w.Write(errsAsJSON)
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("\"ok\""))
-		})
+		mux.HandleFunc(opts.LivenessProbe.Path, handlers.GetHTTPReadinessProbe(opts.ReadinessProbe.Handlers))
 	}
 
 	if !opts.Disable.ReadinessProbe {
 		errorLogger.Print("readiness probe is ENABLED")
-		mux.HandleFunc(opts.ReadinessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Add("Content-Type", "application/json")
-			if errs := opts.ReadinessProbe.Handlers.Do(); errs != nil {
-				errsAsJSON, marshalError := json.Marshal(errs)
-				if marshalError != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte(fmt.Sprintf("\"%s\"", marshalError.Error())))
-					return
-				}
-				w.WriteHeader(http.StatusInternalServerError)
-				w.Write(errsAsJSON)
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("\"ok\""))
-		})
+		mux.HandleFunc(opts.ReadinessProbe.Path, handlers.GetHTTPLivenessProbe(opts.ReadinessProbe.Handlers))
 	}
 
 	if !opts.Disable.Metrics {
 		errorLogger.Print("metrics is ENABLED")
-		mux.HandleFunc(opts.Metrics.Path, func(w http.ResponseWriter, r *http.Request) {
-			promhttp.Handler().ServeHTTP(w, r)
-		})
+		mux.HandleFunc(opts.Metrics.Path, handlers.GetHTTPMetrics())
 	}
 
 	if !opts.Disable.Version {
 		errorLogger.Print("version is ENABLED")
-		mux.HandleFunc(opts.Version.Path, func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(fmt.Sprintf("%s", opts.Version.Value)))
-		})
+		mux.HandleFunc(opts.Version.Path, handlers.GetHTTPVersion(opts.Version.Value))
 	}
 
 	handler := http.Handler(mux)
@@ -112,68 +78,90 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 	return &s
 }
 
+// HTTP defines a class for a HTTP-based server
 type HTTP struct {
+	// Options provides the configuraton for the HTTP server
 	Options *HTTPOptions
-	Server  *http.Server
+	// Server points to the raw instance of a http.Server used internally
+	Server *http.Server
 
-	events  chan error
+	// events is a channel for internal communication, avoid subscribing to this since
+	// that may cause some events to be missed by internal event handlers
+	events chan error
+	// signals is a channel to pass system interrupts from process to internal event handlers.
+	// to disable this, set the configuration in Options.Disable.SignalHandling
 	signals chan os.Signal
-	tasks   *sync.WaitGroup
 }
 
-func (h HTTP) Start() {
-	h.initialise()
-	defer h.denitialise()
-	go h.startSignalsHandler()
-	go h.startEventsHandler()
-	h.tasks.Add(1)
-	go h.startServer()
-	h.tasks.Wait()
+// Start starts the HTTP-based server
+func (h *HTTP) Start() {
+	var tasks sync.WaitGroup
+	initialise(h)
+	defer denitialise(h)
+	if !h.Options.Disable.SignalHandling {
+		go startSignalsHandler(h)
+	}
+	go startEventsHandler(h, &tasks)
+	tasks.Add(1)
+	go startHTTP(h)
+	tasks.Wait()
 }
 
+// Stop terminates the server process gracefully
 func (h *HTTP) Stop() {
 	h.events <- h.Server.Close()
 }
 
-func (h *HTTP) denitialise() {
+// denitialise closes the channels that this Server instance uses to communicate events internally
+func denitialise(h *HTTP) {
 	close(h.events)
 	close(h.signals)
+	fmt.Println("denitialised")
 }
 
-func (h *HTTP) initialise() {
-	h.tasks = &sync.WaitGroup{}
+// initialise initialises the server
+func initialise(h *HTTP) {
 	h.events = make(chan error)
 	h.signals = make(chan os.Signal, 1)
+	fmt.Println("intitialised")
 }
 
-func (h *HTTP) startServer() {
+// startHTTP starts the server
+func startHTTP(h *HTTP) {
 	h.Server.ErrorLog.Printf("starting server on '%s'...", h.Options.Addr.String())
 	h.events <- h.Server.ListenAndServe()
 }
 
-func (h *HTTP) startSignalsHandler() {
+// startSignalsHandler routes system calls like SIGTERM to the server events channel
+// for graceful handling
+func startSignalsHandler(h *HTTP) {
 	signal.Notify(h.signals, syscall.SIGTERM, syscall.SIGINT, syscall.SIGKILL)
-	sig := <-h.signals
-	h.events <- fmt.Errorf("received signal: %s", sig.String())
+	if sig := <-h.signals; sig != nil {
+		h.events <- fmt.Errorf("received signal: %s", sig.String())
+	}
 }
 
-func (h *HTTP) startEventsHandler() {
+// startEventsHandler is an indefinitely looping function meant to be called as a goroutine
+// to handle events passed from another sub-routine
+func startEventsHandler(h *HTTP, tasks *sync.WaitGroup) {
 	for {
-		event := <-h.events
-		if event != nil {
+		if event := <-h.events; event != nil {
 			eventMessage := event.Error()
-			switch true {
+			fmt.Println(eventMessage)
+			switch {
 			case strings.Contains(eventMessage, "http: Server closed"):
 				h.Server.ErrorLog.Printf("server was closed")
-				h.tasks.Done()
-			case strings.Contains(eventMessage, "received signal: "):
-				h.Server.ErrorLog.Printf("server %s", eventMessage)
-				h.handleShutdown(event)
-				h.tasks.Done()
+				tasks.Done()
+				return
 			case strings.Contains(eventMessage, "bind: address already in use"):
 				h.Server.ErrorLog.Printf("failed to start server: '%s' is already in use", h.Options.Addr.String())
-				h.handleShutdown(event)
-				h.tasks.Done()
+				handleShutdown(h, event)
+				tasks.Done()
+				return
+			case strings.Contains(eventMessage, "received signal: "):
+				h.Server.ErrorLog.Printf("server %s", eventMessage)
+				handleShutdown(h, event)
+				h.Server.Close()
 			default:
 				h.Server.ErrorLog.Printf("unknown event: %s", event)
 			}
@@ -181,7 +169,9 @@ func (h *HTTP) startEventsHandler() {
 	}
 }
 
-func (h *HTTP) handleShutdown(event error) []error {
+// handleShutdown iterates through the shutdown handlers, passing each the provided event :event
+// and leaving the handlers to do what they need to before allowing the Server instance to complete
+func handleShutdown(h *HTTP, event error) []error {
 	errors := []error{}
 	if h.Options.ShutdownHandlers != nil {
 		h.Server.ErrorLog.Printf("running %v shutdown handlers...", len(h.Options.ShutdownHandlers))

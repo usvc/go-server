@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/usvc/go-server"
+	"github.com/usvc/go-server/types"
 )
 
 func GetCommand() *cobra.Command {
@@ -15,7 +16,7 @@ func GetCommand() *cobra.Command {
 		Run: func(cmd *cobra.Command, _ []string) {
 			options := server.NewHTTPOptions()
 			options.CORS.AllowHeaders = []string{"X-Auth"}
-			options.LivenessProbe.Handlers = []server.HTTPProbeHandler{
+			options.LivenessProbe.Handlers = []types.HTTPProbeHandler{
 				func() error {
 					<-time.After(1 * time.Second)
 					RequestLogger("example liveness probe 1")
@@ -29,7 +30,7 @@ func GetCommand() *cobra.Command {
 			}
 			options.Loggers.ServerEvent = ServerEventLogger
 			options.Loggers.Request = RequestLogger
-			options.ReadinessProbe.Handlers = []server.HTTPProbeHandler{
+			options.ReadinessProbe.Handlers = []types.HTTPProbeHandler{
 				func() error {
 					<-time.After(1 * time.Second)
 					RequestLogger("example readiness probe 1")
