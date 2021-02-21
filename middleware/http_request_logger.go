@@ -22,7 +22,7 @@ func NewRequestLogger(config interface{}) Middleware {
 			next.ServeHTTP(responseWriterInstance, r)
 			requestDuration := time.Now().Sub(requestStart)
 
-			log(fmt.Sprintf("%s - %s [%s] \"%s %s %s\" %v %v \"%s\" \"%s\" rt=%v id=%s",
+			message := fmt.Sprintf("%s - %s [%s] \"%s %s %s\" %v %v \"%s\" \"%s\" rt=%v id=%s",
 				formatLog(r.RemoteAddr),
 				formatLog(r.URL.User.Username()),
 				formatLog(time.Now().UTC().Format("2/Jan/2006:15:04:05 -0700")),
@@ -35,7 +35,8 @@ func NewRequestLogger(config interface{}) Middleware {
 				formatLog(r.UserAgent()),
 				float64(float64(requestDuration.Microseconds())/1000),
 				formatInterface(r.Context().Value(constants.RequestContextID)),
-			))
+			)
+			log(message)
 		})
 	}
 }
@@ -44,7 +45,11 @@ func formatInterface(entry interface{}) string {
 	if entry == nil {
 		return "-"
 	}
-	return fmt.Sprintf("%s", entry)
+	switch entry.(type) {
+	case string:
+		return fmt.Sprintf("%s", entry)
+	}
+	return fmt.Sprintf("%v", entry)
 }
 
 func formatLog(entry string) string {
