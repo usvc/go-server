@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/usvc/go-server/types"
 )
 
 const (
-	ProbeResponseOK          = "\"ok\""
+	ProbeResponseOK          = `"ok"`
 	ProbeResponseCodeSuccess = http.StatusOK
 	ProbeResponseCodeError   = http.StatusInternalServerError
 )
@@ -19,7 +20,11 @@ func GetHTTPLivenessProbe(handlers types.HTTPProbeHandlers) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "application/json")
 		if errs := handlers.Do(); errs != nil {
-			errsAsJSON, marshalError := json.Marshal(errs)
+			reportedErrors := []string{}
+			for _, err := range errs {
+				reportedErrors = append(reportedErrors, err.Error())
+			}
+			errsAsJSON, marshalError := json.Marshal(reportedErrors)
 			w.WriteHeader(http.StatusInternalServerError)
 			if marshalError != nil {
 				w.Write([]byte(fmt.Sprintf("\"%s\"", marshalError.Error())))
@@ -33,9 +38,13 @@ func GetHTTPLivenessProbe(handlers types.HTTPProbeHandlers) http.HandlerFunc {
 	}
 }
 
-func GetHTTPMetrics() http.HandlerFunc {
+func GetHTTPMetrics(collector ...prometheus.Gatherer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		promhttp.Handler().ServeHTTP(w, r)
+		if len(collector) == 0 {
+			promhttp.Handler().ServeHTTP(w, r)
+			return
+		}
+		promhttp.HandlerFor(collector[0], promhttp.HandlerOpts{}).ServeHTTP(w, r)
 	}
 }
 
@@ -43,7 +52,11 @@ func GetHTTPReadinessProbe(handlers types.HTTPProbeHandlers) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "application/json")
 		if errs := handlers.Do(); errs != nil {
-			errsAsJSON, marshalError := json.Marshal(errs)
+			reportedErrors := []string{}
+			for _, err := range errs {
+				reportedErrors = append(reportedErrors, err.Error())
+			}
+			errsAsJSON, marshalError := json.Marshal(reportedErrors)
 			w.WriteHeader(http.StatusInternalServerError)
 			if marshalError != nil {
 				w.Write([]byte(fmt.Sprintf("\"%s\"", marshalError.Error())))
@@ -59,6 +72,7 @@ func GetHTTPReadinessProbe(handlers types.HTTPProbeHandlers) http.HandlerFunc {
 
 func GetHTTPVersion(version string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(version))
 	}
