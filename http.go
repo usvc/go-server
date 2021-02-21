@@ -23,6 +23,17 @@ func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
 		errorLogger.Print("liveness probe is ENABLED")
 		mux.HandleFunc(opts.LivenessProbe.Path, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("Content-Type", "application/json")
+			if errs := opts.ReadinessProbe.Handlers.Do(); errs != nil {
+				errsAsJSON, marshalError := json.Marshal(errs)
+				if marshalError != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					w.Write([]byte(fmt.Sprintf("\"%s\"", marshalError.Error())))
+					return
+				}
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write(errsAsJSON)
+				return
+			}
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("\"ok\""))
 		})
