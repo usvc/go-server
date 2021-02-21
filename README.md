@@ -46,8 +46,121 @@ import (
 func main() {
   options := server.NewHTTPOptions()
   mux := http.NewServeMux()
+  // ... other configuration tasks ...
 	s := server.NewHTTP(options, mux)
 }
+```
+
+### Using a custom logger
+
+```go
+// ...
+  options := server.NewHTTPOptions()
+  options.Loggers.ServerEvent = func(args ...interface{}) {
+    logrus.Debug(args...)
+  }
+  options.Loggers.Request = func(args ...interface{}) {
+    logrus.Trace(args...)
+  }
+// ...
+```
+
+### Using liveness/readiness probes
+
+Both types of healthchecks implement a similar pattern
+
+```go
+// ...
+  options := server.NewHTTPOptions()
+  // for liveness probes
+  options.LivenessProbe.Handlers = types.HTTPProbeHandlers{
+    func() error {
+      // ... some checks maybe? ...
+      return nil
+    },
+  }
+  // for readiness probes
+  options.ReadinessProbe.Handlers = types.HTTPProbeHandlers{
+    func() error {
+      // ... some checks maybe? ...
+      return nil
+    },
+  }
+// ...
+```
+
+### Using a custom path for probes/metrics
+
+```go
+// ...
+  options := server.NewHTTPOptions()
+  // ... use /not-healthz as the liveness probe endpoint ...
+  options.LivenessProbe.Path = "/not-healthz"
+  // ... use /see-whats-inside as the metrics endpoint ...
+  options.Metrics.Path = "/see-whats-inside"
+  // ... use /not-healthz as the readiness probe endpoint ...
+  options.ReadinessProbe.Path = "/not-readyz"
+// ...
+```
+
+### Password protecting provided paths
+
+```go
+// ...
+  options := server.NewHTTPOptions()
+  // ... protect the liveness probe endpoint with a password...
+  options.LivenessProbe.Password = "123456"
+  // ... protect the metrics endpoint with a password...
+  options.Metrics.Password = "123456"
+  // ... protect the readiness probe endpoint with a password...
+  options.ReadinessProbe.Password = "123456"
+// ...
+```
+
+### Using custom middlewares
+
+```go
+// ...
+  options := server.NewHTTPOptions()
+  options.Middlewares = append(options.Middlewares, func(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+      // ... custom middleware logic ...
+      next.ServeHTTP(w, r)
+    })
+  })
+// ...
+```
+
+### Disabling features
+
+```go
+// ...
+  options := server.NewHTTPOptions()
+  
+  // to disable CORS
+  options.Disable.CORS = false
+
+  // to disable the liveness probe endpoint from being registered
+  options.Disable.LivenessProbe = false
+
+  // to disable the metrics endpoint from being reigstered
+  options.Disable.Metrics = false
+
+  // to disable the readiness probe endpoint from being registered
+  options.Disable.ReadinessProbe = false
+
+  // to disable the request identification middleware
+  options.Disable.RequestIdentifier = false
+
+  // to disable the request logging middleware
+  options.Disable.RequestLogger = false
+
+  // to disable the syscall signal handler middleware
+  options.Disable.SignalHandling = false
+
+  // to disable the version endpoint from being registered
+  options.Disable.Version = false
+// ...
 ```
 
 ## Development Runbook
