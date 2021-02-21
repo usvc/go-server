@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/usvc/go-server/constants"
 	"github.com/usvc/go-server/types"
 )
 
@@ -34,7 +33,7 @@ func NewRequestLogger(config interface{}) Middleware {
 				formatLog(r.Referer()),
 				formatLog(r.UserAgent()),
 				float64(float64(requestDuration.Microseconds())/1000),
-				formatInterface(r.Context().Value(constants.RequestContextID)),
+				formatInterface(r.Context().Value(RequestContextID)),
 			)
 			log(message)
 		})

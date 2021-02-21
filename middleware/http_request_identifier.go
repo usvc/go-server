@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/usvc/go-server/constants"
 )
 
 const (
 	DefaultRequestIdentifierHeaderKey = "X-Request-ID"
+	RequestContextID                  = "request_context_id"
 )
 
 type RequestIdentifierConfiguration struct {
@@ -25,7 +25,7 @@ func NewRequestIdentifier(config interface{}) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			id := uuid.New().String()
 			w.Header().Add(headerKey, id)
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), constants.RequestContextID, id)))
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), RequestContextID, id)))
 		})
 	}
 }
