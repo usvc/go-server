@@ -11,8 +11,9 @@ import (
 
 func GetCommand() *cobra.Command {
 	command := cobra.Command{
-		Use:  "server",
-		Long: "Example code for the github.com/usvc/go-server module",
+		Use:     "server",
+		Long:    "Example code for the github.com/usvc/go-server module",
+		Version: "example",
 		Run: func(cmd *cobra.Command, _ []string) {
 			options := server.NewHTTPOptions()
 			options.CORS.AllowHeaders = []string{"X-Auth"}
