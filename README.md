@@ -3,8 +3,8 @@
 [![release github](https://badge.fury.io/gh/usvc%2Fgo-server.svg)](https://github.com/usvc/go-server/releases)
 [![build status](https://travis-ci.org/usvc/go-server.svg?branch=master)](https://travis-ci.org/usvc/go-server)
 [![pipeline status](https://gitlab.com/usvc/modules/go/server/badges/master/pipeline.svg)](https://gitlab.com/usvc/modules/go/server/-/commits/master)
-[![Test Coverage](https://api.codeclimate.com/v1/badges/aa75f20cdfd8f0d5785b/test_coverage)](https://codeclimate.com/github/usvc/go-server/test_coverage)
-[![Maintainability](https://api.codeclimate.com/v1/badges/aa75f20cdfd8f0d5785b/maintainability)](https://codeclimate.com/github/usvc/go-server/maintainability)
+[![Test Coverage](https://api.codeclimate.com/v1/badges/acfc321def02f47b57a2/test_coverage)](https://codeclimate.com/github/usvc/go-server/test_coverage)
+[![Maintainability](https://api.codeclimate.com/v1/badges/acfc321def02f47b57a2/maintainability)](https://codeclimate.com/github/usvc/go-server/maintainability)
 
 A Go package to deal with setting up a cloud-native microservices-ready server
 
