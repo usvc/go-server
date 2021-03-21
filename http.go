@@ -116,14 +116,12 @@ func (h *HTTP) Stop() {
 func denitialise(h *HTTP) {
 	close(h.events)
 	close(h.signals)
-	fmt.Println("denitialised")
 }
 
 // initialise initialises the server
 func initialise(h *HTTP) {
 	h.events = make(chan error)
 	h.signals = make(chan os.Signal, 1)
-	fmt.Println("intitialised")
 }
 
 // startHTTP starts the server
