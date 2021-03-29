@@ -15,7 +15,7 @@ import (
 )
 
 type FuncHandler interface {
-	HandleFunc(string, http.HandlerFunc)
+	HandleFunc(string, func(http.ResponseWriter, *http.Request))
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }
 
