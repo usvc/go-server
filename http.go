@@ -14,9 +14,14 @@ import (
 	"github.com/usvc/go-server/middleware"
 )
 
+type FuncHandler interface {
+	HandleFunc(string, http.HandlerFunc)
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}
+
 // NewHTTP returns a new HTTP-based server based on the provided options :opts and the
 // custom routes handler :mux
-func NewHTTP(opts HTTPOptions, mux *http.ServeMux) *HTTP {
+func NewHTTP(opts HTTPOptions, mux FuncHandler) *HTTP {
 	addr := opts.Addr.String()
 	errorLogger := log.New(loggerFromExternalLogger{Print: opts.Loggers.ServerEvent}, "", 0)
 
